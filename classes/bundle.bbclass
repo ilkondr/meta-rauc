@@ -93,7 +93,7 @@ python __anonymous() {
 
     for extra in(d.getVar('RAUC_BUNDLE_EXTRAS') or "").split():
         extraflags = d.getVarFlags('RAUC_EXTRA_%s' % extra)
-        depends = slotflags.get('depends') if extraflags else None
+        depends = extraflags.get('depends') if extraflags else None
         target = d.getVar('RAUC_EXTRA_%s' % extra)
         if depends:
             d.appendVarFlag('do_unpack', 'depends', ' ' + depends)
