@@ -46,7 +46,7 @@ LICENSE = "MIT"
 
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
-RAUC_IMAGE_FSTYPE ??= "${@(d.getVar('IMAGE_FSTYPES', False) or "").split()[0]}"
+RAUC_IMAGE_FSTYPE ??= "${@(d.getVar('IMAGE_FSTYPES') or "").split()[0]}"
 
 do_fetch[cleandirs] = "${S}"
 do_patch[noexec] = "1"
@@ -69,13 +69,13 @@ RAUC_BUNDLE_BUILD[vardepsexclude] = "DATETIME"
 
 # Create dependency list from images
 python __anonymous() {
-    for slot in (d.getVar('RAUC_BUNDLE_SLOTS', False) or "").split():
+    for slot in (d.getVar('RAUC_BUNDLE_SLOTS') or "").split():
         slotflags = d.getVarFlags('RAUC_SLOT_%s' % slot)
         imgtype = slotflags.get('type') if slotflags else None
         if not imgtype:
             bb.debug(1, "No [type] given for slot '%s', defaulting to 'image'" % slot)
             imgtype = 'image'
-        image = d.getVar('RAUC_SLOT_%s' % slot, False)
+        image = d.getVar('RAUC_SLOT_%s' % slot)
 
         if not image:
             bb.error("No image set for slot '%s'. Specify via 'RAUC_SLOT_%s = \"<recipe-name>\"'" % (slot, slot))
@@ -91,10 +91,10 @@ python __anonymous() {
         else:
             d.appendVarFlag('do_unpack', 'depends', ' ' + image + ':do_deploy')
 
-    for extra in(d.getVar('RAUC_BUNDLE_EXTRAS', False) or "").split():
+    for extra in(d.getVar('RAUC_BUNDLE_EXTRAS') or "").split():
         extraflags = d.getVarFlags('RAUC_EXTRA_%s' % extra)
         depends = slotflags.get('depends') if extraflags else None
-        target = d.getVar('RAUC_EXTRA_%s' % extra, False)
+        target = d.getVar('RAUC_EXTRA_%s' % extra)
         if depends:
             d.appendVarFlag('do_unpack', 'depends', ' ' + depends)
         elif target:
@@ -111,8 +111,8 @@ DEPENDS = "rauc-native squashfs-tools-native"
 def write_manifest(d):
     import shutil
 
-    machine = d.getVar('MACHINE', False)
-    img_fstype = d.getVar('RAUC_IMAGE_FSTYPE', False)
+    machine = d.getVar('MACHINE')
+    img_fstype = d.getVar('RAUC_IMAGE_FSTYPE')
     bundle_path = d.expand("${S}")
 
     bb.utils.mkdirhier(bundle_path)
@@ -136,7 +136,7 @@ def write_manifest(d):
             manifest.write("hooks=%s\n" % hooksflags.get('hooks'))
         manifest.write('\n')
 
-    for slot in (d.getVar('RAUC_BUNDLE_SLOTS', False) or "").split():
+    for slot in (d.getVar('RAUC_BUNDLE_SLOTS') or "").split():
         slotflags = d.getVarFlags('RAUC_SLOT_%s' % slot)
         if slotflags and 'name' in slotflags:
             imgname = slotflags.get('name')
@@ -152,24 +152,24 @@ def write_manifest(d):
             img_fstype = slotflags.get('fstype')
 
         if imgtype == 'image':
-            imgsource = "%s-%s.%s" % (d.getVar('RAUC_SLOT_%s' % slot, False), machine, img_fstype)
+            imgsource = "%s-%s.%s" % (d.getVar('RAUC_SLOT_%s' % slot), machine, img_fstype)
             imgname = imgsource
         elif imgtype == 'kernel':
             # TODO: Add image type support
             if slotflags and 'file' in slotflags:
-                imgsource = d.getVarFlag('RAUC_SLOT_%s' % slot, 'file', False)
+                imgsource = d.getVarFlag('RAUC_SLOT_%s' % slot, 'file')
             else:
                 imgsource = "%s-%s.bin" % ("zImage", machine)
             imgname = "%s.%s" % (imgsource, "img")
         elif imgtype == 'boot':
             if slotflags and 'file' in slotflags:
-                imgsource = d.getVarFlag('RAUC_SLOT_%s' % slot, 'file', False)
+                imgsource = d.getVarFlag('RAUC_SLOT_%s' % slot, 'file')
             else:
                 imgsource = "%s" % ("barebox.img")
             imgname = imgsource
         elif imgtype == 'file':
             if slotflags and 'file' in slotflags:
-                imgsource = d.getVarFlag('RAUC_SLOT_%s' % slot, 'file', False)
+                imgsource = d.getVarFlag('RAUC_SLOT_%s' % slot, 'file')
             else:
                 raise bb.build.FuncFailed('Unknown file for slot: %s' % slot)
             imgname = "%s.%s" % (imgsource, "img")
@@ -210,7 +210,7 @@ do_unpack_append() {
     bundle_path = d.expand("${S}")
     if not os.path.exists(bundle_path):
         raise bb.build.FuncFailed('Failed creating symlink to %s' % imgname)
-    for extra in (d.getVar('RAUC_BUNDLE_EXTRAS', False) or "").split():
+    for extra in (d.getVar('RAUC_BUNDLE_EXTRAS') or "").split():
         extraflags = d.getVarFlags('RAUC_EXTRA_%s' % extra)
         extratype = extraflags.get('type') if extraflags and 'type' in extraflags else None
         if not extratype:
