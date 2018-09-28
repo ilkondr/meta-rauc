@@ -1,24 +1,24 @@
 # Class for creating rauc bundles
 #
 # Description:
-# 
+#
 # You have to set the slot images in your recipe file following this example:
 #
 #   RAUC_BUNDLE_COMPATIBLE ?= "My Super Product"
 #   RAUC_BUNDLE_VERSION ?= "v2015-06-07-1"
-#   
+#
 #   RAUC_BUNDLE_HOOKS[file] ?= "hook.sh"
 #   RAUC_BUNDLE_HOOKS[hooks] ?= "install-check"
 #
 #   RAUC_BUNDLE_SLOTS ?= "rootfs kernel dtb bootloader"
-#   
+#
 #   RAUC_SLOT_rootfs ?= "core-image-minimal"
 #   RAUC_SLOT_rootfs[fstype] = "ext4"
 #   RAUC_SLOT_rootfs[hooks] ?= "install;post-install"
-#   
+#
 #   RAUC_SLOT_kernel ?= "linux-yocto"
 #   RAUC_SLOT_kernel[type] ?= "kernel"
-#   
+#
 #   RAUC_SLOT_bootloader ?= "barebox"
 #   RAUC_SLOT_bootloader[type] ?= "boot"
 #   RAUC_SLOT_bootloader[file] ?= "barebox.img"
@@ -33,6 +33,10 @@
 #   RAUC_SLOT_dtb[type] ?= "file"
 #   RAUC_SLOT_dtb[file] ?= "${MACHINE}-variant1.dtb"
 #
+# You can attach extra artifacts to your bundle as well
+#   RAUC_BUNDLE_EXTRAS ?= "upgrade-hooks-recipe"
+#   RAUC_BUNDLE_EXTRA_upgrade-hooks-recipe[file] ?= "upgrade-hooks.tar"
+#
 # Additionally you need to provide a certificate and a key file
 #
 #   RAUC_KEY_FILE ?= "development-1.key.pem"
@@ -42,7 +46,7 @@ LICENSE = "MIT"
 
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
-RAUC_IMAGE_FSTYPE ??= "${@(d.getVar('IMAGE_FSTYPES') or "").split()[0]}"
+RAUC_IMAGE_FSTYPE ??= "${@(d.getVar('IMAGE_FSTYPES', False) or "").split()[0]}"
 
 do_fetch[cleandirs] = "${S}"
 do_patch[noexec] = "1"
@@ -65,13 +69,13 @@ RAUC_BUNDLE_BUILD[vardepsexclude] = "DATETIME"
 
 # Create dependency list from images
 python __anonymous() {
-    for slot in (d.getVar('RAUC_BUNDLE_SLOTS') or "").split():
+    for slot in (d.getVar('RAUC_BUNDLE_SLOTS', False) or "").split():
         slotflags = d.getVarFlags('RAUC_SLOT_%s' % slot)
         imgtype = slotflags.get('type') if slotflags else None
         if not imgtype:
             bb.debug(1, "No [type] given for slot '%s', defaulting to 'image'" % slot)
             imgtype = 'image'
-        image = d.getVar('RAUC_SLOT_%s' % slot)
+        image = d.getVar('RAUC_SLOT_%s' % slot, False)
 
         if not image:
             bb.error("No image set for slot '%s'. Specify via 'RAUC_SLOT_%s = \"<recipe-name>\"'" % (slot, slot))
@@ -86,6 +90,15 @@ python __anonymous() {
             d.appendVarFlag('do_unpack', 'depends', ' ' + image + ':do_image_complete')
         else:
             d.appendVarFlag('do_unpack', 'depends', ' ' + image + ':do_deploy')
+
+    for extra in(d.getVar('RAUC_BUNDLE_EXTRAS', False) or "").split():
+        extraflags = d.getVarFlags('RAUC_EXTRA_%s' % extra)
+        depends = slotflags.get('depends') if extraflags else None
+        target = d.getVar('RAUC_EXTRA_%s' % extra, False)
+        if depends:
+            d.appendVarFlag('do_unpack', 'depends', ' ' + depends)
+        elif target:
+            d.appendVarFlag('do_unpack', 'depends', ' ' + target + ':do_deploy')
 }
 
 S = "${WORKDIR}/bundle"
@@ -98,8 +111,8 @@ DEPENDS = "rauc-native squashfs-tools-native"
 def write_manifest(d):
     import shutil
 
-    machine = d.getVar('MACHINE')
-    img_fstype = d.getVar('RAUC_IMAGE_FSTYPE')
+    machine = d.getVar('MACHINE', False)
+    img_fstype = d.getVar('RAUC_IMAGE_FSTYPE', False)
     bundle_path = d.expand("${S}")
 
     bb.utils.mkdirhier(bundle_path)
@@ -123,7 +136,7 @@ def write_manifest(d):
             manifest.write("hooks=%s\n" % hooksflags.get('hooks'))
         manifest.write('\n')
 
-    for slot in (d.getVar('RAUC_BUNDLE_SLOTS') or "").split():
+    for slot in (d.getVar('RAUC_BUNDLE_SLOTS', False) or "").split():
         slotflags = d.getVarFlags('RAUC_SLOT_%s' % slot)
         if slotflags and 'name' in slotflags:
             imgname = slotflags.get('name')
@@ -139,24 +152,24 @@ def write_manifest(d):
             img_fstype = slotflags.get('fstype')
 
         if imgtype == 'image':
-            imgsource = "%s-%s.%s" % (d.getVar('RAUC_SLOT_%s' % slot), machine, img_fstype)
+            imgsource = "%s-%s.%s" % (d.getVar('RAUC_SLOT_%s' % slot, False), machine, img_fstype)
             imgname = imgsource
         elif imgtype == 'kernel':
             # TODO: Add image type support
             if slotflags and 'file' in slotflags:
-                imgsource = d.getVarFlag('RAUC_SLOT_%s' % slot, 'file')
+                imgsource = d.getVarFlag('RAUC_SLOT_%s' % slot, 'file', False)
             else:
                 imgsource = "%s-%s.bin" % ("zImage", machine)
             imgname = "%s.%s" % (imgsource, "img")
         elif imgtype == 'boot':
             if slotflags and 'file' in slotflags:
-                imgsource = d.getVarFlag('RAUC_SLOT_%s' % slot, 'file')
+                imgsource = d.getVarFlag('RAUC_SLOT_%s' % slot, 'file', False)
             else:
                 imgsource = "%s" % ("barebox.img")
             imgname = imgsource
         elif imgtype == 'file':
             if slotflags and 'file' in slotflags:
-                imgsource = d.getVarFlag('RAUC_SLOT_%s' % slot, 'file')
+                imgsource = d.getVarFlag('RAUC_SLOT_%s' % slot, 'file', False)
             else:
                 raise bb.build.FuncFailed('Unknown file for slot: %s' % slot)
             imgname = "%s.%s" % (imgsource, "img")
@@ -193,6 +206,26 @@ do_unpack_append() {
         shutil.copy(d.expand("${WORKDIR}/%s" % hf), dsthook)
         st = os.stat(dsthook)
         os.chmod(dsthook, st.st_mode | stat.S_IEXEC)
+
+    bundle_path = d.expand("${S}")
+    if not os.path.exists(bundle_path):
+        raise bb.build.FuncFailed('Failed creating symlink to %s' % imgname)
+    for extra in (d.getVar('RAUC_BUNDLE_EXTRAS', False) or "").split():
+        extraflags = d.getVarFlags('RAUC_EXTRA_%s' % extra)
+        extratype = extraflags.get('type') if extraflags and 'type' in extraflags else None
+        if not extratype:
+            bb.debug(1, "No type given for extra '%s', defaulting to 'file'" % extra)
+            extratype = 'file'
+        if extratype == 'file':
+            extrafilename = extraflags.get('file') if extraflags else None
+            if not extrafilename:
+                bb.error("No file set for extra '%s'. Please specify via RAUC_EXTRA_%s[file]" % (extra,extra))
+                return
+            extrasrc = d.expand("${DEPLOY_DIR_IMAGE}/%s") % extrafilename
+            bundle_extrapath = '%s/%s' % (bundle_path, extrafilename)
+            shutil.copy(extrasrc, bundle_extrapath)
+            st = os.stat(extrasrc)
+            os.chmod(bundle_extrapath, st.st_mode | stat.S_IEXEC)
 }
 
 BUNDLE_BASENAME ??= "${PN}"
