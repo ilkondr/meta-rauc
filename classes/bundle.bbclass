@@ -35,7 +35,7 @@
 #
 # You can attach extra artifacts to your bundle as well
 #   RAUC_BUNDLE_EXTRAS ?= "upgrade-hooks-recipe"
-#   RAUC_BUNDLE_EXTRA_upgrade-hooks-recipe[file] ?= "upgrade-hooks.tar"
+#   RAUC_BUNDLE_EXTRA_upgrade-hooks-recipe[files] ?= "upgrade-hooks.tar foo.bar"
 #
 # Additionally you need to provide a certificate and a key file
 #
@@ -209,23 +209,27 @@ do_unpack_append() {
 
     bundle_path = d.expand("${S}")
     if not os.path.exists(bundle_path):
-        raise bb.build.FuncFailed('Failed creating symlink to %s' % imgname)
+        raise bb.build.FuncFailed('%s does not exist!' % bundle_path)
     for extra in (d.getVar('RAUC_BUNDLE_EXTRAS') or "").split():
         extraflags = d.getVarFlags('RAUC_EXTRA_%s' % extra)
         extratype = extraflags.get('type') if extraflags and 'type' in extraflags else None
         if not extratype:
-            bb.debug(1, "No type given for extra '%s', defaulting to 'file'" % extra)
-            extratype = 'file'
-        if extratype == 'file':
-            extrafilename = extraflags.get('file') if extraflags else None
-            if not extrafilename:
-                bb.error("No file set for extra '%s'. Please specify via RAUC_EXTRA_%s[file]" % (extra,extra))
-                return
-            extrasrc = d.expand("${DEPLOY_DIR_IMAGE}/%s") % extrafilename
-            bundle_extrapath = '%s/%s' % (bundle_path, extrafilename)
-            shutil.copy(extrasrc, bundle_extrapath)
-            st = os.stat(extrasrc)
-            os.chmod(bundle_extrapath, st.st_mode | stat.S_IEXEC)
+            bb.debug(1, "No type given for extra '%s', defaulting to 'source'" % extra)
+            extratype = 'source'
+        if extratype == 'artifact':
+            for filename in (extraflags.get('files') if extraflags else None or "").split():
+                src = d.expand("${DEPLOY_DIR_IMAGE}/%s") % filename
+                bundle_extrapath = '%s/%s' % (bundle_path, filename)
+                shutil.copy(src, bundle_extrapath)
+                st = os.stat(src)
+                os.chmod(bundle_extrapath, st.st_mode | stat.S_IEXEC)
+        elif extratype == 'source':
+            for filename in (extraflags.get('files') if extraflags else None or "").split():
+                srcfile = d.expand("${WORKDIR}/%s" % filename)
+                dstfile = '%s/%s' % (bundle_path, filename)
+                shutil.copy(srcfile, dstfile)
+                st = os.stat(srcfile)
+                os.chmod(dstfile, st.st_mode | stat.S_IEXEC)
 }
 
 BUNDLE_BASENAME ??= "${PN}"
